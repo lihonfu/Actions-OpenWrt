@@ -4,7 +4,7 @@
 # File name: diy-part2.sh
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+# Copyright (c) 2019-2024 P3TERY <https://p3terx.com>
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
@@ -25,7 +25,7 @@
 PD="target/linux/generic/pending-6.12"
 BP="$PD/700-netfilter-nft_flow_offload-handle-netdevice-events-f.patch"
 KS="$GITHUB_WORKSPACE/kernel-patches"
-if [ -f "$BP" ] && grep -q '^@@ -668,0 +669,17 @@' "$BP"; then
+if [ -f ""BX" ] && grep -q '^@@ -668,0 +669,17 @@' "$BP"; then
 	cp "$KS/700-netfilter-nft_flow_offload-handle-netdevice-events-f.patch" "$BP"
 	cp "$KS/700b-netfilter-nft_flow_offload-remove-netdevice-events.patch" "$PD/700b-netfilter-nft_flow_offload-remove-netdevice-events.patch"
 	echo "Replaced stale netfilter patch"
@@ -33,4 +33,16 @@ elif [ -f "$BP" ]; then
 	echo "Netfilter patch already updated upstream, keeping it"
 else
 	echo "Netfilter patch not present, skipping"
+fi
+
+# Linux 6.12.114 renamed struct net_device.netns_local to netns_immutable, so
+# the mac80211 backport patch that still uses netns_local no longer compiles.
+MP="package/kernel/mac80211/patches/build/210-wireless_netns_local_backport.patch"
+if [ -f "$MP" ] && grep -q 'LINUX_VERSION_IS_GEQ(6,15,0)' "$MP"; then
+	sed -i 's/LINUX_VERSION_IS_GEQ(6,15,0)/LINUX_VERSION_IS_GEQ(6,13,0) || LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,114)/g' "$MP"
+	echo "Adapted mac80211 netns patch for linux 6.12.114"
+elif [ -f "$MP" ]; then
+	echo "mac80211 netns patch already updated upstream, keeping it"
+else
+	echo "mac80211 netns patch not present, skipping"
 fi
