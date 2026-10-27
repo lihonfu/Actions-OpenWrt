@@ -1,0 +1,91 @@
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Subject: [PATCH] netfilter: nft_flow_offload: handle netdevice events from
+ nf_flow_table
+
+Move the code that deals with device events to the core.
+
+The upstream hunks carry no context, only line numbers.  The 6.12.y
+flowtable rework moved that code, so they landed inside
+nf_flow_table_init() and broke the build.  Same change, real context.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -717,6 +717,23 @@
+ 	mutex_unlock(&flowtable_lock);
+ }
+ EXPORT_SYMBOL_GPL(nf_flow_table_cleanup);
++
++static int nf_flow_table_netdev_event(struct notifier_block *this,
++					      unsigned long event, void *ptr)
++{
++	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
++
++	if (event != NETDEV_DOWN)
++		return NOTIFY_DONE;
++
++	nf_flow_table_cleanup(dev);
++
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block flow_offload_netdev_notifier = {
++	.notifier_call	= nf_flow_table_netdev_event,
++};
+ 
+ void nf_flow_table_free(struct nf_flowtable *flow_table)
+ {
+@@ -791,25 +791,32 @@
+ 	if (ret)
+ 		goto out_offload;
+ 
+-	ret = nf_flow_register_bpf();
+-	if (ret)
+-		goto out_bpf;
+-
+-	return 0;
+-
+-out_bpf:
+-	nf_flow_table_offload_exit();
+-out_offload:
+-	unregister_pernet_subsys(&nf_flow_table_net_ops);
+-	return ret;
+-}
+-
+-static void __exit nf_flow_table_module_exit(void)
+-{
+-	rcu_barrier();
+-	nf_flow_table_offload_exit();
+-	unregister_pernet_subsys(&nf_flow_table_net_ops);
+-}
++	ret = nf_flow_register_bpf();
++	if (ret)
++		goto out_bpf;
++
++	ret = register_netdevice_notifier(&flow_offload_netdev_notifier);
++	if (ret)
++		goto out_notifier;
++
++	return 0;
++
++out_notifier:
++	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
++out_bpf:
++	nf_flow_table_offload_exit();
++out_offload:
++	unregister_pernet_subsys(&nf_flow_table_net_ops);
++	return ret;
++}
++
++static void __exit nf_flow_table_module_exit(void)
++{
++	rcu_barrier();
++	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
++	nf_flow_table_offload_exit();
++	unregister_pernet_subsys(&nf_flow_table_net_ops);
++}
+ 
+ module_init(nf_flow_table_module_init);
+ module_exit(nf_flow_table_module_exit);
