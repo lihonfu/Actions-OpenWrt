@@ -1,0 +1,19 @@
+#!/bin/sh
+# SSR Plus+ DNS 妯″紡淇銆?#
+# pdnsd_enable 涓嶆槸 pdnsd 寮€鍏筹紝鏄?DNS 妯″紡閫夋嫨鍣細
+#   1 -> dns2tcp      涓婃父鍙栬嚜 tunnel_forward锛堥粯璁?8.8.4.4:53锛夛紝
+#                     闇€瑕佷唬鐞嗗厛鍙敤鎵嶈兘瑙ｆ瀽锛屽惎鍔ㄦ湡鑷攣锛屼笖浠ｇ爜鏃?fallback
+#   4 -> mosdns       鏈瀯寤烘湭缂栬瘧
+#   6 -> chinadns-ng  鏈瀯寤烘湭缂栬瘧
+#   7 -> mihomo 鍐呯疆 DNS锛屼笉渚濊禆浠讳綍澶栭儴浜岃繘鍒舵垨澧欏涓婃父
+#
+# 缁熶竴寮哄埗 7銆傚墠缂€ 99- 淇濊瘉鎺掑湪 luci-ssr-plus 涔嬪悗鎵ц銆?
+[ -f /etc/config/shadowsocksr ] || exit 0
+
+cur="$(uci -q get shadowsocksr.@global[0].pdnsd_enable)"
+if [ "$cur" != "7" ]; then
+	uci -q set shadowsocksr.@global[0].pdnsd_enable='7'
+	uci -q commit shadowsocksr
+fi
+
+exit 0
