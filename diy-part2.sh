@@ -20,12 +20,17 @@ if grep -q 'LINUX_VERSION_IS_GEQ(6,15,0)' package/kernel/mac80211/patches/build/
 fi
 
 #
-# ---- SSR Plus+ DNS 淇 ----
+# ---- SSR Plus+ DNS 修正 ----
 #
-# 1) mihomo 鐨?dns 娈电敱 init 鑴氭湰浠?overlay 褰㈠紡鐢熸垚銆俹verlay 鏈€鍚庡悎骞躲€?#    浼樺厛绾ч珮浜庤闃?YAML锛屼絾婧愮爜閲屾病鍐?nameserver锛屼簬鏄繍琛屾椂娌跨敤璁㈤槄閲岀殑
-#    1.1.1.1 / 8.8.8.8 鈥斺€?澧欏唴涓嶅彲杈撅紝鍐呯疆 DNS 闈欓粯杩斿洖绌猴紝
-#    琛ㄧ幇灏辨槸"浠ｇ悊閰嶅ソ浜嗕絾涓€涓珯閮芥墦涓嶅紑"銆傛妸鍥藉唴鍙揪鐨?DoH 娉ㄥ叆 overlay锛?#    璁㈤槄鏇存柊涔熷啿涓嶆帀銆?#
-#    娉ㄦ剰 heredoc 鐢ㄧ殑鏄?<<-EOF锛屽彧鍓ュ埗琛ㄧ涓嶅墺绌烘牸锛?#    鎻掑叆琛岀殑鍓嶇紑蹇呴』淇濇寔 "涓や釜 tab + 涓や釜绌烘牸"锛屽惁鍒?YAML 缁撴瀯浼氱銆?#
+# 1) mihomo 的 dns 段由 init 脚本以 overlay 形式生成。overlay 最后合并、
+#    优先级高于订阅 YAML，但源码里没写 nameserver，于是运行时沿用订阅里的
+#    1.1.1.1 / 8.8.8.8，墙内不可达，内置 DNS 静默返回空，
+#    表现就是代理配好了却一个站都打不开。把国内可达的 DoH 注入 overlay，
+#    订阅更新也冲不掉。
+#
+#    注意 heredoc 用的是 <<-EOF，只剥制表符不剥空格，
+#    插入行的前缀必须保持两个 tab 加两个空格，否则 YAML 结构会碎。
+#
 SSR_INIT="feeds/helloworld/luci-app-ssr-plus/root/etc/init.d/shadowsocksr"
 
 if [ -f "$SSR_INIT" ]; then
@@ -34,17 +39,20 @@ if [ -f "$SSR_INIT" ]; then
 		echo "[diy] ssr-plus overlay: nameserver -> doh.pub / alidns"
 	fi
 
-	# 鏈厤缃?DNS 妯″紡鏃堕粯璁よ蛋 mihomo 鍐呯疆 DNS(7)锛岃€屼笉鏄?dns2tcp(1)
+	# 未配置 DNS 模式时默认走 mihomo 内置 DNS(7)，而不是 dns2tcp(1)
 	sed -i 's|dns_mode="$(uci_get_by_type global pdnsd_enable 0)"|dns_mode="$(uci_get_by_type global pdnsd_enable 7)"|' "$SSR_INIT"
 	echo "[diy] ssr-plus dns_mode default -> 7"
 fi
 
-# 2) 杞欢娴侀噺鍒嗚浇涓?tproxy 缁撴瀯鎬у啿绐侊細宸插缓绔嬬殑杩炴帴缁曡繃 netfilter锛?#    tproxy 鏀朵笉鍒板寘锛岃〃鐜颁负"鏈夋椂鍊欒兘涓娿€佹湁鏃跺€欎笉鑳戒笂"銆?if grep -q '^CONFIG_PACKAGE_TURBOACC_INCLUDE_FLOW_OFFLOADING=y' .config; then
+# 2) 软件流量分载与 tproxy 结构性冲突：已建立的连接绕过 netfilter，
+#    tproxy 收不到包，表现为有时候能上、有时候不能上。
+if grep -q '^CONFIG_PACKAGE_TURBOACC_INCLUDE_FLOW_OFFLOADING=y' .config; then
 	sed -i 's|^CONFIG_PACKAGE_TURBOACC_INCLUDE_FLOW_OFFLOADING=y|# CONFIG_PACKAGE_TURBOACC_INCLUDE_FLOW_OFFLOADING is not set|' .config
 	echo "[diy] turboacc software flow offload disabled"
 fi
 
-# 3) GitHub 鎻愪氦鐨勬枃浠堕粯璁?644锛寀ci-defaults 鑴氭湰闇€瑕佸彲鎵ц浣?if [ -d files/etc/uci-defaults ]; then
+# 3) GitHub 提交的文件默认 644，uci-defaults 脚本需要可执行位
+if [ -d files/etc/uci-defaults ]; then
 	chmod +x files/etc/uci-defaults/*
 	echo "[diy] uci-defaults chmod +x"
 fi
