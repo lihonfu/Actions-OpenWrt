@@ -1,0 +1,24 @@
+#!/bin/sh
+# SSR Plus+ DNS 模式兜底。
+#
+# 刷机保留配置时，shipped 默认值（shadowsocksr.config）不会覆盖已有 /etc/config，
+# 这里再强制一次，保证升级后仍是 mihomo 内置 DNS。
+#
+# pdnsd_enable 不是 pdnsd 开关，是 DNS 模式选择器：
+#   1=dns2tcp（需代理先起，启动期自锁）
+#   4=mosdns        6=chinadns-ng（本构建都没编译）
+#   7=mihomo 内置 DNS，不依赖外部二进制或墙外上游
+#
+# 文件名用 zz- 前缀保证排在 luci-ssr-plus 之后。ASCII 下 '9'(0x39) < 'l'(0x6c)，
+# 用 99- 反而会跑到 luci-ssr-plus 前面，那时 @global 段还没建，uci set 会失败。
+
+[ -f /etc/config/shadowsocksr ] || exit 0
+uci -q get shadowsocksr.@global[0] >/dev/null 2>&1 || exit 0
+
+cur="$(uci -q get shadowsocksr.@global[0].pdnsd_enable)"
+if [ "$cur" != "7" ]; then
+	uci -q set shadowsocksr.@global[0].pdnsd_enable='7'
+	uci -q commit shadowsocksr
+fi
+
+exit 0
