@@ -49,16 +49,21 @@ UCI_DEF="files/etc/uci-defaults"
 [ -f "$UCI_DEF/zz-ssrplus-dns" ] || fail "$UCI_DEF/zz-ssrplus-dns 不存在（刷机兜底钩子丢了）"
 
 # 1) mihomo 内置 DNS 的 nameserver。
-#    init 脚本用 heredoc 往 overlay 追加 dns: 段，只写了 enable/enhanced-mode/
-#    listen/ipv6，没写 nameserver，于是运行时沿用订阅 YAML 里的 1.1.1.1 / 8.8.8.8
-#    DoH —— 墙内不可达，mihomo DNS 静默返回 "No answer"。
+#    【2026-11-05 修正】上一版这里注入的是 doh.pub / dns.alidns.com，那是错的：
+#    国内 DoH 在 nameserver 里是按 DIRECT 直连解析的，查询在境内明文落地，
+#    照样被运营商改写（实测 www.google.com 解析到 185.45.5.35 / 174.132.167.252
+#    这类假地址）。mihomo 内置 DNS 确实激活了，但它的上游是坏的。
+#    正确做法：上游用境外 DoH，并加 "#代理组名" 后缀强制查询走代理发出，
+#    境内落地彻底消失。1.1.1.1 在本网络不可达（实测 DoH 超时），故用 8.8.8.8/9.9.9.9。
 #    overlay 最后合并，优先级高于订阅 YAML，注入进去订阅更新也冲不掉。
 #    注意 <<-EOF 只剥制表符不剥空格，前缀必须保持「两个 tab + 两个空格」。
-if grep -q 'enhanced-mode: redir-host' "$SSR_INIT" && ! grep -q 'doh\.pub' "$SSR_INIT"; then
-	sed -i 's|^\(\t\t  \)enhanced-mode: redir-host$|\1enhanced-mode: redir-host\n\1nameserver:\n\1- https://doh.pub/dns-query\n\1- https://dns.alidns.com/dns-query|' "$SSR_INIT"
+DNS_GROUP="一键代理"
+if grep -q 'enhanced-mode: redir-host' "$SSR_INIT" && ! grep -q 'dns-query#' "$SSR_INIT"; then
+	sed -i "s|^\(\t\t  \)enhanced-mode: redir-host\$|\1enhanced-mode: redir-host\n\1nameserver:\n\1- https://8.8.8.8/dns-query#$DNS_GROUP\n\1- https://9.9.9.9/dns-query#$DNS_GROUP|" "$SSR_INIT"
 fi
-grep -q 'https://doh.pub/dns-query' "$SSR_INIT" || fail "nameserver 注入失败：init 脚本里 enhanced-mode 行格式变了，锚点 \`^「两个tab两个空格」enhanced-mode: redir-host$\` 不再匹配"
-echo "[diy] ssr-plus nameserver -> doh.pub / alidns"
+grep -q 'https://8.8.8.8/dns-query#' "$SSR_INIT" || fail "nameserver 注入失败：init 脚本里 enhanced-mode 行格式变了，锚点 \`^「两个tab两个空格」enhanced-mode: redir-host\$\` 不再匹配"
+grep -q 'doh\.pub' "$SSR_INIT" && fail "init 脚本里残留 doh.pub（上游 SDK 或旧补丁把国内 DoH 带回来了），会在境内明文解析"
+echo "[diy] ssr-plus nameserver -> 8.8.8.8 / 9.9.9.9 DoH via proxy ($DNS_GROUP)"
 
 # 2) 缺项时的默认模式。661 行 dns_mode 决定 dns.enable，
 #    1308 行 ssrplus_dns 决定 pdnsd_enable_flag。只改一处会让两者不一致：
