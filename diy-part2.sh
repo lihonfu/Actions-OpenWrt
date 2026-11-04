@@ -85,6 +85,31 @@ echo "[diy] default pdnsd_enable -> 7"
 chmod +x "$UCI_DEF"/*
 echo "[diy] uci-defaults chmod +x"
 
+# 5) 强制 LAN 客户端的 53 端口流量落到本机。
+#    【2026-11-05 新增】客户端网卡若静态写了 8.8.8.8 / 1.1.1.1（很常见），
+#    查询会绕过路由器直接发往境外，拿到的是运营商改写过的假地址；这些假 IP
+#    又不在 gfwlist nftset 里，于是被判直连 —— 代理明明能用，域名却打不开。
+#    把发往任意 DNS 的 53 端口 NAT 回本机，客户端配置什么 DNS 都无所谓。
+#    src_dip 用 127.0.0.1 是 fw4 的取值方式（DNAT 到本机回环），实测生成的是
+#    `ip daddr 127.0.0.1 udp dport 53 redirect to :53`，且不影响 ss_spec 表。
+FW_CFG="files/etc/config/firewall"
+[ -f "$FW_CFG" ] || fail "$FW_CFG 不存在（仓库缺 files/etc/config/firewall，DNS 劫持兜底无法固化）"
+if ! grep -q "dns-force-local" "$FW_CFG"; then
+	cat >>"$FW_CFG" <<'EOF'
+
+config redirect
+	option name 'dns-force-local'
+	option src 'lan'
+	option src_dip '127.0.0.1'
+	option proto 'tcp udp'
+	option src_dport '53'
+	option dest_port '53'
+	option target 'DNAT'
+EOF
+fi
+grep -q "option name 'dns-force-local'" "$FW_CFG" || fail "dns-force-local 规则写入失败"
+echo "[diy] firewall dns-force-local -> LAN:53 强制回本机"
+
 #
 # 注：这里原本还有一段「关闭 turboacc software flow offload」的 sed，
 # 已于 2026-11-04 删除 —— 实测 luci-app-turboacc 不存在于 coolsnowwolf/lede
@@ -92,5 +117,11 @@ echo "[diy] uci-defaults chmod +x"
 # manifest 和 config.buildinfo 里。该包及其 TURBOACC_INCLUDE_* 子符号
 # 在构建树中根本不存在，make defconfig 会静默丢弃，所以那段 sed 永不执行。
 # 结论：flow offload 与 tproxy 冲突这条线索对成品固件不成立，真正的病因
-# 只有 pdnsd_enable 默认值 + nameserver 污染。
+# 只有 pdnsd_enable 默认值 + nameserver 上游污染。
+#
+# 2026-11-05 复盘补充：完整的 DNS 链路一共 4 个环节，缺一个都会「代理好用但域名不通」——
+#   (a) mihomo dns.nameserver 上游不能用国内 DoH        -> 第 1 段
+#   (b) pdnsd_enable 必须是 7（mihomo 内置 DNS）          -> 第 2/3 段 + zz- uci-defaults
+#   (c) LAN 客户端不能拿自己的 DNS，否则绕过整条链路      -> 第 5 段
+#   (d) gfwlist nftset 首连缺项会让首个 TLS 握手失败      -> 架构限制，无解，刷新即好
 #
